@@ -1,8 +1,8 @@
-# port-whisperer
+# @ropean/ports
 
 **A beautiful CLI tool to see what's running on your ports.**
 
-Stop guessing which process is hogging port 3000. `port-whisperer` gives you a color-coded table of every dev server, database, and background process listening on your machine -- with framework detection, Docker container identification, and interactive process management.
+Stop guessing which process is hogging port 3000. `@ropean/ports` gives you a color-coded table of every dev server, database, and background process listening on your machine -- with framework detection, Docker container identification, and interactive process management.
 
 ## What it looks like
 
@@ -10,7 +10,7 @@ Stop guessing which process is hogging port 3000. `port-whisperer` gives you a c
 $ ports
 
  ┌─────────────────────────────────────┐
- │  Port Whisperer                     │
+ │  @ropean/ports                      │
  │  listening to your ports...         │
  └─────────────────────────────────────┘
 
@@ -36,18 +36,18 @@ Colors: green = healthy, yellow = orphaned, red = zombie.
 ## Install
 
 ```bash
-npm install -g port-whisperer
+npm install -g @ropean/ports
 ```
 
 Or run it directly without installing:
 
 ```bash
-npx port-whisperer
+npx @ropean/ports
 ```
 
 ### Or let Claude Code install it for you
 
-If you use [Claude Code](https://claude.ai/code), you can ask it to `npm install -g port-whisperer` and start using `ports` right away -- no setup steps needed.
+If you use [Claude Code](https://claude.ai/code), you can ask it to `npm install -g @ropean/ports` and start using `ports` right away -- no setup steps needed.
 
 ## Usage
 
@@ -71,8 +71,6 @@ Includes system services, desktop apps, and everything else listening on your ma
 
 ```bash
 ports 3000
-# or
-whoisonport 3000
 ```
 
 Detailed view: full process tree, repository path, current git branch, memory usage, and an interactive prompt to kill the process.
@@ -84,22 +82,43 @@ ports kill 3000                # kill by port
 ports kill 3000 5173 8080      # kill multiple
 ports kill 3000-3010           # kill a port range
 ports kill 42872               # kill by PID
+ports kill node                # kill all listening processes named "node"
+ports kill node bun            # kill all listeners matching any of these names
+ports kill node 3000 42872     # mix names, ports, and PIDs
 ports kill -f 3000             # force kill (SIGKILL)
+ports kill -y node             # skip confirmation prompt
 ```
 
 Resolves port to process automatically. Falls back to PID if no listener matches. Use `-f` when a process won't die gracefully.
 
+Name matching is case-insensitive and exact against the process name as reported by the OS (e.g. `node`, `bun`, `python3`, `deno`). Only listening processes are considered -- non-listening processes with the same name are not touched. When more than one process is targeted, you'll be shown the list and asked to confirm. Pass `-y`/`--yes` to skip the prompt.
+
+```
+$ ports kill node
+
+  About to kill 3 processes (SIGTERM):
+  • :3000 — node (PID 42872)
+  • :5173 — node (PID 95380)
+  • :8080 — node (PID 17422)
+
+  Proceed? [y/N] y
+
+  ✓ Sent SIGTERM to :3000 — node (PID 42872)
+  ✓ Sent SIGTERM to :5173 — node (PID 95380)
+  ✓ Sent SIGTERM to :8080 — node (PID 17422)
+
+  Summary: 3 killed
+```
+
 Port ranges expand into individual kills -- empty ports are silently skipped and shown as a summary:
 
 ```
-$ ports kill 3000-3005
+$ ports kill -y 3000-3005
 
-  Killing :3000 — node (PID 42872)
   ✓ Sent SIGTERM to :3000 — node (PID 42872)
-  Killing :3001 — node (PID 95380)
   ✓ Sent SIGTERM to :3001 — node (PID 95380)
 
-  Range summary: 2 killed, 4 empty
+  Summary: 2 killed, 4 empty
 ```
 
 ### View process logs
@@ -117,7 +136,7 @@ Discovers log files automatically using `lsof` file descriptor detection. If std
 ```
 $ ports logs 3000 --lines 5
 
-  Port Whisperer — logs for :3000 (node, PID 42872)
+  @ropean/ports — logs for :3000 (node, PID 42872)
 
   ▸ Tailing stdout: /tmp/next-dev.output
 
@@ -199,3 +218,7 @@ Framework detection reads `package.json` dependencies and inspects process comma
 ## License
 
 [MIT](LICENSE)
+
+## Credits
+
+Forked from [LarsenCundric/port-whisperer](https://github.com/LarsenCundric/port-whisperer). Thanks to the original author for the foundation.

@@ -191,135 +191,197 @@ async function main() {
     }
 
     case "kill": {
-      const rawKillArgs = filteredArgs
-        .slice(1)
-        .filter((a) => a !== "--force" && a !== "-f");
       const force =
         filteredArgs.includes("--force") || filteredArgs.includes("-f");
+      const skipConfirm =
+        filteredArgs.includes("--yes") || filteredArgs.includes("-y");
       const signal = force ? "SIGKILL" : "SIGTERM";
+      const rawKillArgs = filteredArgs
+        .slice(1)
+        .filter(
+          (a) =>
+            a !== "--force" &&
+            a !== "-f" &&
+            a !== "--yes" &&
+            a !== "-y",
+        );
 
       if (rawKillArgs.length === 0) {
         console.log(
           chalk.red(
-            `\n  Usage: ports kill [-f|--force] <port|pid|range> [port|pid|range...]\n`,
+            `\n  Usage: ports kill [-f|--force] [-y|--yes] <port|pid|range|name> [...]\n`,
           ),
         );
         console.log(
           chalk.gray(
-            "  Kills listener on port (1-65535), or process by PID. Use -f for SIGKILL.",
+            "  Kills listener on port (1-65535), process by PID, or all listeners matching a process name.",
           ),
         );
-        console.log(chalk.gray("  Ranges: ports kill 3000-3010\n"));
+        console.log(chalk.gray("  Ranges: ports kill 3000-3010"));
+        console.log(chalk.gray("  Names:  ports kill node bun  (case-insensitive, matches listening processes)"));
+        console.log(chalk.gray("  Flags:  -f SIGKILL, -y skip confirmation\n"));
         process.exit(1);
       }
 
-      // Expand port ranges (e.g. "3000-3010") into individual args
-      const killArgs = [];
-      const rangeSpans = []; // track which args came from ranges
+      // Build target list. Each entry: { pid, label, source: 'port'|'pid'|'name'|'range', name? }
+      const targets = [];
+      const seenPids = new Set();
+      let anyFailed = false;
+      let listenersCache = null;
+      const getListeners = async () => {
+        if (!listenersCache) listenersCache = await getListeningPorts();
+        return listenersCache;
+      };
+
+      const addTarget = (t) => {
+        if (seenPids.has(t.pid)) return;
+        seenPids.add(t.pid);
+        targets.push(t);
+      };
+
+      let rangeMissCount = 0;
+      let rangeUsed = false;
+
       for (const arg of rawKillArgs) {
         const rangeMatch = arg.match(/^(\d+)-(\d+)$/);
         if (rangeMatch) {
+          rangeUsed = true;
           const start = parseInt(rangeMatch[1], 10);
           const end = parseInt(rangeMatch[2], 10);
           if (start > end) {
-            console.log(
-              chalk.red(
-                `\n  ✕ Invalid range: ${arg} (start must be less than end)\n`,
-              ),
-            );
+            console.log(chalk.red(`\n  ✕ Invalid range: ${arg} (start must be less than end)\n`));
             process.exitCode = 1;
             return;
           }
           if (end - start > 1000) {
-            console.log(
-              chalk.red(`\n  ✕ Range too large: ${arg} (max 1000 ports)\n`),
-            );
+            console.log(chalk.red(`\n  ✕ Range too large: ${arg} (max 1000 ports)\n`));
             process.exitCode = 1;
             return;
           }
           if (start < 1 || end > 65535) {
-            console.log(
-              chalk.red(
-                `\n  ✕ Invalid range: ${arg} (ports must be 1-65535)\n`,
-              ),
-            );
+            console.log(chalk.red(`\n  ✕ Invalid range: ${arg} (ports must be 1-65535)\n`));
             process.exitCode = 1;
             return;
           }
-          const rangeStart = killArgs.length;
           for (let p = start; p <= end; p++) {
-            killArgs.push(String(p));
+            const resolved = await resolveKillTarget(p);
+            if (!resolved) {
+              rangeMissCount++;
+              continue;
+            }
+            addTarget({
+              pid: resolved.pid,
+              label: `:${resolved.port} — ${resolved.info?.processName || "unknown"} (PID ${resolved.pid})`,
+              source: "range",
+            });
           }
-          rangeSpans.push({
-            start: rangeStart,
-            end: killArgs.length,
-            label: arg,
+          continue;
+        }
+
+        const n = parseInt(arg, 10);
+        const isNumeric = !isNaN(n) && String(n) === arg.trim();
+
+        if (isNumeric) {
+          const resolved = await resolveKillTarget(n);
+          if (!resolved) {
+            const msg =
+              n <= 65535
+                ? `No listener on :${n} and no process with PID ${n}`
+                : `No process with PID ${n}`;
+            console.log(chalk.red(`  ✕ ${msg}`));
+            anyFailed = true;
+            continue;
+          }
+          const label =
+            resolved.via === "port"
+              ? `:${resolved.port} — ${resolved.info?.processName || "unknown"} (PID ${resolved.pid})`
+              : `PID ${resolved.pid}`;
+          addTarget({ pid: resolved.pid, label, source: resolved.via });
+          continue;
+        }
+
+        // Name match against listening ports (case-insensitive exact on processName)
+        const nameLc = arg.toLowerCase();
+        const listeners = await getListeners();
+        const matches = listeners.filter(
+          (p) => (p.processName || "").toLowerCase() === nameLc,
+        );
+        if (matches.length === 0) {
+          console.log(chalk.red(`  ✕ No listening process named "${arg}"`));
+          anyFailed = true;
+          continue;
+        }
+        for (const m of matches) {
+          addTarget({
+            pid: m.pid,
+            label: `:${m.port} — ${m.processName} (PID ${m.pid})`,
+            source: "name",
+            name: arg,
           });
-        } else {
-          killArgs.push(arg);
         }
       }
 
-      let anyFailed = false;
+      if (targets.length === 0) {
+        if (rangeUsed && rangeMissCount > 0) {
+          console.log(chalk.gray(`  ${rangeMissCount} empty port(s) in range, nothing to kill.\n`));
+        }
+        process.exitCode = anyFailed ? 1 : 0;
+        break;
+      }
+
+      // Confirm when more than one target, unless -y, or when any name match selected multiple
+      const nameMatchCount = targets.filter((t) => t.source === "name").length;
+      const needConfirm =
+        !skipConfirm && (targets.length > 1 || nameMatchCount > 0);
+
+      if (needConfirm) {
+        console.log();
+        console.log(
+          chalk.yellow.bold(
+            `  About to kill ${targets.length} process${targets.length === 1 ? "" : "es"} (${signal}):`,
+          ),
+        );
+        for (const t of targets) {
+          console.log(`  ${chalk.gray("•")} ${t.label}`);
+        }
+        console.log();
+
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        const answer = await new Promise((resolve) => {
+          rl.question(chalk.yellow("  Proceed? [Y/n] "), resolve);
+        });
+        rl.close();
+        const a = answer.trim().toLowerCase();
+        if (a === "n" || a === "no") {
+          console.log(chalk.gray("\n  Aborted.\n"));
+          process.exitCode = 0;
+          break;
+        }
+      }
+
       let killed = 0;
-      let noListener = 0;
       console.log();
-
-      for (let i = 0; i < killArgs.length; i++) {
-        const arg = killArgs[i];
-        const n = parseInt(arg, 10);
-        const isFromRange = rangeSpans.some((r) => i >= r.start && i < r.end);
-
-        if (isNaN(n) || String(n) !== arg.trim()) {
-          console.log(chalk.red(`  ✕ "${arg}" is not a valid port/PID`));
-          anyFailed = true;
-          continue;
-        }
-
-        const resolved = await resolveKillTarget(n);
-        if (!resolved) {
-          // Silently count misses from ranges instead of spamming
-          if (isFromRange) {
-            noListener++;
-            continue;
-          }
-          const msg =
-            n <= 65535
-              ? `No listener on :${n} and no process with PID ${n}`
-              : `No process with PID ${n}`;
-          console.log(chalk.red(`  ✕ ${msg}`));
-          anyFailed = true;
-          continue;
-        }
-
-        const { pid, via } = resolved;
-        const label =
-          via === "port"
-            ? `:${resolved.port} — ${resolved.info?.processName || "unknown"} (PID ${pid})`
-            : `PID ${pid}`;
-
-        console.log(chalk.white(`  Killing ${label}`));
-        const ok = killProcess(pid, signal);
+      for (const t of targets) {
+        const ok = killProcess(t.pid, signal);
         if (ok) {
-          console.log(chalk.green(`  ✓ Sent ${signal} to ${label}`));
+          console.log(chalk.green(`  ✓ Sent ${signal} to ${t.label}`));
           killed++;
         } else {
           console.log(
-            chalk.red(`  ✕ Failed. Try: sudo kill${force ? " -9" : ""} ${pid}`),
+            chalk.red(`  ✕ Failed: ${t.label}. Try: sudo kill${force ? " -9" : ""} ${t.pid}`),
           );
           anyFailed = true;
         }
       }
 
-      // Print summary for ranges
-      if (rangeSpans.length > 0) {
+      if (rangeUsed || targets.length > 1) {
         const parts = [];
         if (killed > 0) parts.push(chalk.green(`${killed} killed`));
-        if (noListener > 0) parts.push(chalk.gray(`${noListener} empty`));
-        if (anyFailed) parts.push(chalk.red(`some failed`));
-        console.log(
-          `  ${chalk.dim("Range summary:")} ${parts.join(chalk.dim(", "))}`,
-        );
+        if (rangeMissCount > 0) parts.push(chalk.gray(`${rangeMissCount} empty`));
+        if (anyFailed) parts.push(chalk.red("some failed"));
+        if (parts.length > 0) {
+          console.log(`  ${chalk.dim("Summary:")} ${parts.join(chalk.dim(", "))}`);
+        }
       }
 
       console.log();
@@ -378,7 +440,7 @@ async function main() {
 
       console.log();
       console.log(
-        chalk.cyan.bold("  Port Whisperer") +
+        chalk.cyan.bold("  @ropean/ports") +
           chalk.gray(` — logs for ${portLabel} (${processName}, PID ${pid})`),
       );
       console.log();
@@ -505,41 +567,28 @@ async function main() {
     case "-h": {
       console.log();
       console.log(
-        chalk.cyan.bold("  Port Whisperer") +
+        chalk.cyan.bold("  @ropean/ports") +
           chalk.gray(" — listen to your ports"),
       );
       console.log();
       console.log(chalk.white("  Usage:"));
-      console.log(
-        `    ${chalk.cyan("ports")}              Show dev server ports`,
-      );
-      console.log(
-        `    ${chalk.cyan("ports --all")}        Show all listening ports`,
-      );
-      console.log(
-        `    ${chalk.cyan("ports ps")}           Show all running dev processes`,
-      );
-      console.log(
-        `    ${chalk.cyan("ports <number>")}     Detailed info about a specific port`,
-      );
-      console.log(
-        `    ${chalk.cyan("ports kill <n>")}     Kill by port, PID, or range (-f for SIGKILL)`,
-      );
-      console.log(
-        `    ${chalk.cyan("ports kill 3000-3010")} Kill all listeners in a port range`,
-      );
-      console.log(
-        `    ${chalk.cyan("ports logs <n>")}     Tail log output for a process on a port`,
-      );
-      console.log(
-        `    ${chalk.cyan("ports clean")}        Kill orphaned/zombie dev servers`,
-      );
-      console.log(
-        `    ${chalk.cyan("ports watch")}        Monitor port changes in real-time`,
-      );
-      console.log(
-        `    ${chalk.cyan("whoisonport <num>")} Alias for ports <number>`,
-      );
+      const helpRows = [
+        ["ports", "Show dev server ports"],
+        ["ports --all", "Show all listening ports"],
+        ["ports ps", "Show all running dev processes"],
+        ["ports <number>", "Detailed info about a specific port"],
+        ["ports kill <n>", "Kill by port, PID, range, or name (-f SIGKILL, -y skip prompt)"],
+        ["ports kill 3000-3010", "Kill all listeners in a port range"],
+        ["ports kill node bun", "Kill all listening processes matching a name"],
+        ["ports logs <n>", "Tail log output for a process on a port"],
+        ["ports clean", "Kill orphaned/zombie dev servers"],
+        ["ports watch", "Monitor port changes in real-time"],
+      ];
+      const cmdWidth = Math.max(...helpRows.map((r) => r[0].length));
+      for (const [cmd, desc] of helpRows) {
+        const padded = cmd + " ".repeat(cmdWidth - cmd.length);
+        console.log(`    ${chalk.cyan(padded)}  ${desc}`);
+      }
       console.log();
       break;
     }
