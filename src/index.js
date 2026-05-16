@@ -65,9 +65,10 @@ async function main() {
         output: process.stdout,
       });
       rl.question(
-        chalk.yellow(`  Kill process on :${portNum}? [y/N] `),
+        chalk.yellow(`  Kill process on :${portNum}? [Y/n] `),
         (answer) => {
-          if (answer.toLowerCase() === "y") {
+          const a = answer.trim().toLowerCase();
+          if (a !== "n" && a !== "no") {
             const success = killProcess(info.pid);
             if (success) {
               console.log(chalk.green(`\n  ✓ Killed PID ${info.pid}\n`));
@@ -76,6 +77,8 @@ async function main() {
                 chalk.red(`\n  ✕ Failed. Try: sudo kill -9 ${info.pid}\n`),
               );
             }
+          } else {
+            console.log(chalk.gray("\n  Aborted.\n"));
           }
           rl.close();
         },
@@ -172,8 +175,9 @@ async function main() {
       }
       console.log();
 
-      rl.question(chalk.yellow("  Kill all? [y/N] "), (answer) => {
-        if (answer.toLowerCase() === "y") {
+      rl.question(chalk.yellow("  Kill all? [Y/n] "), (answer) => {
+        const a = answer.trim().toLowerCase();
+        if (a !== "n" && a !== "no") {
           for (const p of orphaned) {
             if (killProcess(p.pid)) {
               killed.push(p.pid);
