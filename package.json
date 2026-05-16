@@ -1,8 +1,7 @@
 {
-  "name": "port-whisperer",
-  "version": "1.5.0",
+  "name": "@ropean/ports",
+  "version": "0.0.1",
   "description": "A beautiful CLI tool to see what's running on your ports -- framework detection, process info, and interactive management",
-  "type": "module",
   "keywords": [
     "cli",
     "port",
@@ -14,28 +13,33 @@
     "terminal",
     "framework-detection"
   ],
-  "author": "Larsen Cundric",
-  "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/larsencundric/port-whisperer.git"
+    "url": "https://github.com/ropean/ports.git"
   },
-  "engines": {
-    "node": ">=18"
+  "license": "MIT",
+  "author": "ropean",
+  "contributors": [
+    "Claude (Anthropic) <noreply@anthropic.com>"
+  ],
+  "type": "module",
+  "bin": {
+    "ports": "./src/index.js"
   },
   "files": [
     "src/"
   ],
-  "bin": {
-    "ports": "./src/index.js",
-    "whoisonport": "./src/index.js"
-  },
   "scripts": {
-    "start": "node src/index.js"
+    "dev": "node src/index.js",
+    "link:global": "pnpm link --global",
+    "unlink:global": "pnpm uninstall --global @ropean/ports"
   },
   "dependencies": {
     "chalk": "5.6.2",
     "cli-table3": "0.6.5",
-    "string-width": "7.2.0"
+    "string-width": "8.2.1"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

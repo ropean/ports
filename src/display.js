@@ -63,7 +63,7 @@ function padToWidth(text, targetWidth) {
 }
 
 function renderHeader() {
-  const line1 = "  🔊 Port Whisperer";
+  const line1 = "  🔊 @ropean/ports";
   const line2 = "  listening to your ports...";
   const border = "─".repeat(BOX_INNER_WIDTH);
   console.log();
