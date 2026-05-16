@@ -15,7 +15,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ropean/ports.git"
+    "url": "git+https://github.com/ropean/ports.git"
   },
   "license": "MIT",
   "author": "ropean",
@@ -24,7 +24,7 @@
   ],
   "type": "module",
   "bin": {
-    "ports": "./src/index.js"
+    "ports": "src/index.js"
   },
   "files": [
     "src/"
@@ -32,7 +32,16 @@
   "scripts": {
     "dev": "node src/index.js",
     "link:global": "pnpm link --global",
-    "unlink:global": "pnpm uninstall --global @ropean/ports"
+    "unlink:global": "pnpm uninstall --global @ropean/ports",
+    "prepublishOnly": "node --check src/index.js",
+    "publish:dry": "npm publish --access public --dry-run",
+    "release:patch": "npm version patch && npm publish --access public && git push --follow-tags",
+    "release:minor": "npm version minor && npm publish --access public && git push --follow-tags",
+    "release:major": "npm version major && npm publish --access public && git push --follow-tags"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
     "chalk": "5.6.2",
