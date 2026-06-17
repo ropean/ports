@@ -581,6 +581,7 @@ async function main() {
         ["ports --all", "Show all listening ports"],
         ["ports ps", "Show all running dev processes"],
         ["ports <number>", "Detailed info about a specific port"],
+        ["ports <name>", "Show ports for a process name (e.g. node, docker)"],
         ["ports kill <n>", "Kill by port, PID, range, or name (-f SIGKILL, -y skip prompt)"],
         ["ports kill 3000-3010", "Kill all listeners in a port range"],
         ["ports kill node bun", "Kill all listening processes matching a name"],
@@ -597,12 +598,27 @@ async function main() {
       break;
     }
 
-    default:
-      console.log(chalk.red(`\n  Unknown command: ${command}`));
-      console.log(
-        chalk.gray(`  Run ${chalk.cyan("ports --help")} for usage.\n`),
+    default: {
+      // Treat unknown command as a process-name filter: `ports node`, `ports docker`
+      const nameLc = command.toLowerCase();
+      const ports = await getListeningPorts();
+      const matches = ports.filter(
+        (p) => (p.processName || "").toLowerCase() === nameLc,
       );
-      process.exit(1);
+
+      if (matches.length === 0) {
+        console.log(
+          chalk.red(`\n  No listening process named "${command}".`),
+        );
+        console.log(
+          chalk.gray(`  Run ${chalk.cyan("ports --help")} for usage.\n`),
+        );
+        process.exit(1);
+      }
+
+      displayPortTable(matches, false);
+      break;
+    }
   }
 }
 

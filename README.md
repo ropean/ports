@@ -75,6 +75,15 @@ ports 3000
 
 Detailed view: full process tree, repository path, current git branch, memory usage, and an interactive prompt to kill the process.
 
+### Filter ports by process name
+
+```bash
+ports node      # show only ports held by "node"
+ports docker    # show only Docker-mapped ports
+```
+
+Matches the PROCESS column (case-insensitive, exact). Same names accepted by `ports kill <name>`.
+
 ### Kill a process
 
 ```bash
