@@ -1,6 +1,6 @@
 {
   "name": "@ropean/ports",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A beautiful CLI tool to see what's running on your ports -- framework detection, process info, and interactive management",
   "keywords": [
     "cli",
