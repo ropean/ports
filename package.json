@@ -24,16 +24,17 @@
   ],
   "type": "module",
   "bin": {
-    "ports": "src/index.js"
+    "ports": "dist/index.js"
   },
   "files": [
-    "src/"
+    "dist/"
   ],
   "scripts": {
     "dev": "node src/index.js",
+    "build": "node build.mjs",
     "link:global": "pnpm link --global",
     "unlink:global": "pnpm uninstall --global @ropean/ports",
-    "prepublishOnly": "node --check src/index.js",
+    "prepublishOnly": "node build.mjs",
     "publish:dry": "npm publish --access public --dry-run",
     "release:patch": "npm version patch && npm publish --access public && git push --follow-tags",
     "release:minor": "npm version minor && npm publish --access public && git push --follow-tags",
@@ -50,5 +51,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
   }
 }
